@@ -1,0 +1,6 @@
+date,description,amount,category,account
+2026-03-01,Acme Payroll,2400.00,Income,Demo Checking
+2026-03-02,Rent,-1500.00,Housing,Demo Checking
+2026-03-03,Corner Grocery,-64.50,Groceries,Demo Card
+2026-03-04,Coffee Shop,-4.75,Dining,Demo Card
+2026-03-05,Streaming Service,-15.99,Subscriptions,Demo Card
