@@ -29,6 +29,12 @@ _MIGRATIONS: tuple[str, ...] = (
     );
     CREATE INDEX idx_transactions_posted_on ON transactions(posted_on);
     """,
+    """
+    CREATE TABLE sync_state (
+        key TEXT PRIMARY KEY,
+        cursor TEXT NOT NULL
+    );
+    """,
 )
 
 
@@ -86,6 +92,22 @@ class SqliteStore:
                     )
                     for t in transactions
                 ],
+            )
+
+    def delete_transactions(self, ids: Iterable[TransactionId]) -> None:
+        with self._conn:
+            self._conn.executemany("DELETE FROM transactions WHERE id = ?", [(i,) for i in ids])
+
+    def get_cursor(self, key: str) -> str | None:
+        row = self._conn.execute("SELECT cursor FROM sync_state WHERE key = ?", (key,)).fetchone()
+        return None if row is None else str(row[0])
+
+    def set_cursor(self, key: str, cursor: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO sync_state (key, cursor) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET cursor = excluded.cursor",
+                (key, cursor),
             )
 
     def list_accounts(self) -> list[Account]:

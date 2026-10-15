@@ -1,3 +1,4 @@
+import os
 from datetime import UTC, date, datetime, timedelta
 from importlib.metadata import version as pkg_version
 from pathlib import Path
@@ -8,6 +9,7 @@ import typer
 from mainhub.connectors.base import Connector
 from mainhub.connectors.csv import CsvConnector
 from mainhub.connectors.mock import MockConnector
+from mainhub.connectors.plaid import HttpPlaidClient, PlaidConnector
 from mainhub.core.money import format_cents
 from mainhub.core.sqlite_store import SqliteStore
 from mainhub.core.tools import get_spending, net_worth
@@ -25,6 +27,27 @@ def _today() -> date:
     return datetime.now(UTC).date()
 
 
+def _plaid_connector(store: SqliteStore) -> PlaidConnector:
+    """Build a Plaid connector from environment variables (never from CLI arguments)."""
+    client_id = os.environ.get("PLAID_CLIENT_ID")
+    secret = os.environ.get("PLAID_SECRET")
+    tokens = [t.strip() for t in os.environ.get("PLAID_ACCESS_TOKENS", "").split(",") if t.strip()]
+    if not (client_id and secret and tokens):
+        store.close()
+        typer.echo(
+            "error: set PLAID_CLIENT_ID, PLAID_SECRET and PLAID_ACCESS_TOKENS (see .env.example)",
+            err=True,
+        )
+        raise typer.Exit(1)
+    try:
+        client = HttpPlaidClient(client_id, secret, os.environ.get("PLAID_ENV", "sandbox"))
+    except MainHubError as exc:
+        store.close()
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    return PlaidConnector(client, tokens, store.get_cursor, _today())
+
+
 @app.callback()
 def main() -> None:
     """MainHub: personal finance platform."""
@@ -38,7 +61,7 @@ def version() -> None:
 
 @app.command()
 def sync(
-    source: Annotated[str, typer.Option(help="mock or csv")] = "mock",
+    source: Annotated[str, typer.Option(help="mock, csv or plaid")] = "mock",
     transactions: Annotated[
         Path | None, typer.Option(help="Transactions CSV (csv source).")
     ] = None,
@@ -46,6 +69,7 @@ def sync(
     db: DbOption = Path("data/mainhub.sqlite"),
 ) -> None:
     """Pull data from a source into the local store (idempotent)."""
+    store = SqliteStore(db)
     connector: Connector
     if source == "mock":
         connector = MockConnector(today=_today())
@@ -53,14 +77,19 @@ def sync(
         if transactions is None:
             raise typer.BadParameter("--transactions is required for the csv source")
         connector = CsvConnector(transactions, balances)
+    elif source == "plaid":
+        connector = _plaid_connector(store)
     else:
-        raise typer.BadParameter("source must be 'mock' or 'csv'")
-    store = SqliteStore(db)
+        raise typer.BadParameter("source must be 'mock', 'csv' or 'plaid'")
     try:
         data = connector.fetch()
         store.upsert_accounts(data.accounts)
         store.upsert_balances(data.balances)
         store.upsert_transactions(data.transactions)
+        store.delete_transactions(data.removed_transaction_ids)
+        # Cursors advance only after the data is safely stored, so a failed sync is retried.
+        for key, cursor in data.cursors.items():
+            store.set_cursor(key, cursor)
     except MainHubError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from exc

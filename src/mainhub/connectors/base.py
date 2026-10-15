@@ -1,7 +1,8 @@
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Protocol
 
-from mainhub.core.models import Account, Balance, Transaction
+from mainhub.core.models import Account, Balance, Transaction, TransactionId
 
 
 @dataclass(frozen=True, slots=True)
@@ -11,6 +12,9 @@ class SyncData:
     accounts: tuple[Account, ...]
     balances: tuple[Balance, ...]
     transactions: tuple[Transaction, ...]
+    removed_transaction_ids: tuple[TransactionId, ...] = ()
+    # New incremental-sync cursors by source key; persist only after the data is stored.
+    cursors: Mapping[str, str] = field(default_factory=dict)
 
 
 class Connector(Protocol):

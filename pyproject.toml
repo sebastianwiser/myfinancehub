@@ -7,7 +7,10 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ email = "sebastian.wiser@gmail.com" }]
 requires-python = ">=3.12"
-dependencies = ["typer>=0.12"]
+dependencies = [
+    "httpx>=0.28.1",
+    "typer>=0.12",
+]
 
 [project.scripts]
 mainhub = "mainhub.cli.app:app"

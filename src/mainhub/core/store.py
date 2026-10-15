@@ -2,7 +2,7 @@ from collections.abc import Iterable
 from datetime import date
 from typing import Protocol
 
-from mainhub.core.models import Account, Balance, Transaction
+from mainhub.core.models import Account, Balance, Transaction, TransactionId
 
 
 class FinanceStore(Protocol):
@@ -13,6 +13,14 @@ class FinanceStore(Protocol):
     def upsert_balances(self, balances: Iterable[Balance]) -> None: ...
 
     def upsert_transactions(self, transactions: Iterable[Transaction]) -> None: ...
+
+    def delete_transactions(self, ids: Iterable[TransactionId]) -> None: ...
+
+    def get_cursor(self, key: str) -> str | None:
+        """Incremental-sync cursor for a source item, or None before the first sync."""
+        ...
+
+    def set_cursor(self, key: str, cursor: str) -> None: ...
 
     def list_accounts(self) -> list[Account]: ...
 

@@ -2,7 +2,7 @@
 
 An always-on personal finance platform: net worth and spending tracking, itemized purchase capture, and read-only agents that suggest optimizations. Deterministic core, LLM at the edges. See `docs/` for decisions.
 
-**Status:** Phase 1 (store, mock/CSV connectors, CLI).
+**Status:** Phase 2 (Plaid connector built against recorded sandbox-shaped responses; live linking pending).
 
 ## Quickstart
 

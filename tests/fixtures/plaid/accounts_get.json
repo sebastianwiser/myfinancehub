@@ -1,0 +1,12 @@
+{
+  "accounts": [
+    {"account_id": "acc_chk", "name": "Plaid Checking", "type": "depository", "subtype": "checking",
+     "balances": {"current": 1100.50, "iso_currency_code": "USD"}},
+    {"account_id": "acc_sav", "name": "Plaid Saving", "type": "depository", "subtype": "savings",
+     "balances": {"current": 5000.00, "iso_currency_code": "USD"}},
+    {"account_id": "acc_cc", "name": "Plaid Credit Card", "type": "credit", "subtype": "credit card",
+     "balances": {"current": 410.30, "iso_currency_code": "USD"}}
+  ],
+  "item": {"item_id": "item_1"},
+  "request_id": "req-fixture-accounts"
+}
