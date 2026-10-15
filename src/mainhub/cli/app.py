@@ -1,5 +1,6 @@
 import os
 import secrets
+import webbrowser
 from datetime import UTC, date, datetime, timedelta
 from importlib.metadata import version as pkg_version
 from pathlib import Path
@@ -18,6 +19,7 @@ from mainhub.core.receipts import reconcile_all
 from mainhub.core.sqlite_store import SqliteStore
 from mainhub.core.tools import get_spending, net_worth
 from mainhub.errors import MainHubError
+from mainhub.link_server import LinkServer, serve_until_linked
 from mainhub.settings import append_to_list_var, env_file, load_env_file, set_var
 
 app = typer.Typer(help="MainHub: personal finance platform.", no_args_is_help=True)
@@ -108,6 +110,37 @@ def sync(
     )
     if newly_matched:
         typer.echo(f"matched {newly_matched} receipt(s) to bank transactions")
+
+
+@app.command()
+def link() -> None:
+    """Connect a real bank: opens Plaid Link in your browser and saves the access token to .env."""
+    client_id = os.environ.get("PLAID_CLIENT_ID")
+    secret = os.environ.get("PLAID_SECRET")
+    if not (client_id and secret):
+        typer.echo("error: set PLAID_CLIENT_ID and PLAID_SECRET in .env first", err=True)
+        raise typer.Exit(1)
+    try:
+        client = HttpPlaidClient(client_id, secret, os.environ.get("PLAID_ENV", "sandbox"))
+    except MainHubError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    server = LinkServer(
+        client, lambda token: append_to_list_var(env_file(), "PLAID_ACCESS_TOKENS", token)
+    )
+    typer.echo(f"Opening {server.url}  (Ctrl+C to cancel)")
+    webbrowser.open(server.url)
+    try:
+        serve_until_linked(server)
+    except KeyboardInterrupt:
+        typer.echo("cancelled")
+        raise typer.Exit(1) from None
+    finally:
+        server.server_close()
+    if server.error:
+        typer.echo(f"error: {server.error}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"connected; saved the access token to {env_file()}")
 
 
 @app.command("link-sandbox")

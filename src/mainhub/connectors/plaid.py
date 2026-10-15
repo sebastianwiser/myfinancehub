@@ -67,6 +67,24 @@ class HttpPlaidClient:
         )
         return str(exchanged["access_token"])
 
+    def create_link_token(self, redirect_uri: str | None = None) -> str:
+        """Create a short-lived token that lets the browser open Plaid Link."""
+        body: dict[str, Any] = {
+            "client_name": "MainHub",
+            "language": "en",
+            "country_codes": ["US"],
+            "user": {"client_user_id": "mainhub-owner"},
+            "products": ["transactions"],
+        }
+        if redirect_uri:
+            body["redirect_uri"] = redirect_uri
+        return str(self._post("/link/token/create", body)["link_token"])
+
+    def exchange_public_token(self, public_token: str) -> str:
+        """Swap the one-time public token from Link for a permanent access token."""
+        result = self._post("/item/public_token/exchange", {"public_token": public_token})
+        return str(result["access_token"])
+
     def _post(self, path: str, body: dict[str, Any]) -> Mapping[str, Any]:
         try:
             response = self._http.post(path, json={**self._auth, **body})
