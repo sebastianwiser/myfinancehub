@@ -45,3 +45,24 @@ class Transaction:
     amount_cents: int
     description: str
     category: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Receipt:
+    """A stored receipt photo. Amounts are positive cents paid; `transaction_id` once matched."""
+
+    id: str
+    merchant: str
+    purchased_on: date | None
+    tax_cents: int
+    total_cents: int
+    image_path: str
+    transaction_id: TransactionId | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExpenseItem:
+    receipt_id: str
+    position: int
+    description: str
+    amount_cents: int

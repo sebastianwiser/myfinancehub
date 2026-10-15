@@ -38,3 +38,12 @@ def append_to_list_var(path: Path, key: str, item: str) -> None:
         lines.append(f"{key}={item}")
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     path.chmod(0o600)
+
+
+def set_var(path: Path, key: str, value: str) -> None:
+    """Set KEY=value in the .env file, replacing any existing line."""
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    lines = [ln for ln in lines if not ln.startswith(f"{key}=")]
+    lines.append(f"{key}={value}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.chmod(0o600)

@@ -1,8 +1,15 @@
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import date
 from typing import Protocol
 
-from mainhub.core.models import Account, Balance, Transaction, TransactionId
+from mainhub.core.models import (
+    Account,
+    Balance,
+    ExpenseItem,
+    Receipt,
+    Transaction,
+    TransactionId,
+)
 
 
 class FinanceStore(Protocol):
@@ -31,3 +38,17 @@ class FinanceStore(Protocol):
     def list_transactions(self, start: date, end: date) -> list[Transaction]:
         """Transactions with start <= posted_on <= end, oldest first."""
         ...
+
+    def add_receipt(self, receipt: Receipt, items: Sequence[ExpenseItem]) -> None:
+        """Store a receipt and its line items atomically."""
+        ...
+
+    def get_receipt(self, receipt_id: str) -> Receipt | None: ...
+
+    def list_receipts(self, unmatched_only: bool = False) -> list[Receipt]: ...
+
+    def list_expense_items(self, receipt_id: str) -> list[ExpenseItem]: ...
+
+    def link_receipt(self, receipt_id: str, transaction_id: TransactionId) -> None: ...
+
+    def linked_transaction_ids(self) -> set[TransactionId]: ...

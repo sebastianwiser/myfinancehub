@@ -1,9 +1,18 @@
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from datetime import date
 from pathlib import Path
 
-from mainhub.core.models import Account, AccountId, AccountType, Balance, Transaction, TransactionId
+from mainhub.core.models import (
+    Account,
+    AccountId,
+    AccountType,
+    Balance,
+    ExpenseItem,
+    Receipt,
+    Transaction,
+    TransactionId,
+)
 
 # Numbered migrations; the index + 1 is stored in PRAGMA user_version.
 _MIGRATIONS: tuple[str, ...] = (
@@ -33,6 +42,24 @@ _MIGRATIONS: tuple[str, ...] = (
     CREATE TABLE sync_state (
         key TEXT PRIMARY KEY,
         cursor TEXT NOT NULL
+    );
+    """,
+    """
+    CREATE TABLE receipts (
+        id TEXT PRIMARY KEY,
+        merchant TEXT NOT NULL,
+        purchased_on TEXT,
+        tax_cents INTEGER NOT NULL,
+        total_cents INTEGER NOT NULL,
+        image_path TEXT NOT NULL,
+        transaction_id TEXT REFERENCES transactions(id) ON DELETE SET NULL
+    );
+    CREATE TABLE expense_items (
+        receipt_id TEXT NOT NULL REFERENCES receipts(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        description TEXT NOT NULL,
+        amount_cents INTEGER NOT NULL,
+        PRIMARY KEY (receipt_id, position)
     );
     """,
 )
@@ -136,3 +163,72 @@ class SqliteStore:
             )
             for r in rows
         ]
+
+    def add_receipt(self, receipt: Receipt, items: Sequence[ExpenseItem]) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO receipts (id, merchant, purchased_on, tax_cents, total_cents, "
+                "image_path, transaction_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    receipt.id,
+                    receipt.merchant,
+                    receipt.purchased_on.isoformat() if receipt.purchased_on else None,
+                    receipt.tax_cents,
+                    receipt.total_cents,
+                    receipt.image_path,
+                    receipt.transaction_id,
+                ),
+            )
+            self._conn.executemany(
+                "INSERT INTO expense_items (receipt_id, position, description, amount_cents) "
+                "VALUES (?, ?, ?, ?)",
+                [(i.receipt_id, i.position, i.description, i.amount_cents) for i in items],
+            )
+
+    def _receipts(self, unmatched_only: bool) -> list[Receipt]:
+        query = (
+            "SELECT id, merchant, purchased_on, tax_cents, total_cents, image_path, "
+            "transaction_id FROM receipts"
+        )
+        if unmatched_only:
+            query += " WHERE transaction_id IS NULL"
+        rows = self._conn.execute(query + " ORDER BY purchased_on, id").fetchall()
+        return [
+            Receipt(
+                r[0],
+                r[1],
+                date.fromisoformat(r[2]) if r[2] else None,
+                r[3],
+                r[4],
+                r[5],
+                TransactionId(r[6]) if r[6] else None,
+            )
+            for r in rows
+        ]
+
+    def get_receipt(self, receipt_id: str) -> Receipt | None:
+        found = [r for r in self._receipts(False) if r.id == receipt_id]
+        return found[0] if found else None
+
+    def list_receipts(self, unmatched_only: bool = False) -> list[Receipt]:
+        return self._receipts(unmatched_only)
+
+    def list_expense_items(self, receipt_id: str) -> list[ExpenseItem]:
+        rows = self._conn.execute(
+            "SELECT receipt_id, position, description, amount_cents FROM expense_items "
+            "WHERE receipt_id = ? ORDER BY position",
+            (receipt_id,),
+        ).fetchall()
+        return [ExpenseItem(r[0], r[1], r[2], r[3]) for r in rows]
+
+    def link_receipt(self, receipt_id: str, transaction_id: TransactionId) -> None:
+        with self._conn:
+            self._conn.execute(
+                "UPDATE receipts SET transaction_id = ? WHERE id = ?", (transaction_id, receipt_id)
+            )
+
+    def linked_transaction_ids(self) -> set[TransactionId]:
+        rows = self._conn.execute(
+            "SELECT transaction_id FROM receipts WHERE transaction_id IS NOT NULL"
+        ).fetchall()
+        return {TransactionId(r[0]) for r in rows}

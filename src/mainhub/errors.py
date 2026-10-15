@@ -8,3 +8,15 @@ class MoneyParseError(MainHubError):
 
 class ConnectorError(MainHubError):
     """A connector could not read or normalize its source data."""
+
+
+class ReceiptError(MainHubError):
+    """A receipt could not be read, validated, or stored."""
+
+
+class ExtractionError(ReceiptError):
+    """The vision model could not produce a usable receipt."""
+
+
+class ReceiptMismatchError(ReceiptError):
+    """Receipt items plus tax do not add up to the total."""
