@@ -2,7 +2,7 @@
 
 An always-on personal finance platform: net worth and spending tracking, itemized purchase capture, and read-only agents that suggest optimizations. Deterministic core, LLM at the edges. See `docs/` for decisions.
 
-**Status:** Phase 3 (Telegram receipt inbox with a local Ollama vision model).
+**Status:** Phase 3 + SimpleFIN and Plaid connectors. Sources: mock, csv, plaid, simplefin.
 
 ## Quickstart
 

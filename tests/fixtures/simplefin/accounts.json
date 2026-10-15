@@ -1,0 +1,25 @@
+{
+  "errlist": [],
+  "connections": [
+    {"conn_id": "CON1", "name": "Example Bank", "org_id": "example.com", "sfin_url": "https://bridge.example/simplefin"}
+  ],
+  "accounts": [
+    {"id": "A1", "conn_id": "CON1", "name": "Everyday Checking", "currency": "USD",
+     "balance": "1234.56", "balance-date": 1773532800,
+     "transactions": [
+       {"id": "T1", "posted": 1773100800, "amount": "-4.75", "description": "BLUE BOTTLE COFFEE #12"},
+       {"id": "T2", "posted": 1773187200, "amount": "2400.00", "description": "ACME CORP DIRECT DEP PAYROLL"},
+       {"id": "T3", "posted": 1773273600, "amount": "-120.00", "description": "ONLINE TRANSFER TO SAVINGS"},
+       {"id": "T4", "posted": 0, "amount": "-33.00", "description": "PENDING GAS STATION", "pending": true}
+     ]},
+    {"id": "A2", "conn_id": "CON1", "name": "Rewards Credit Card", "currency": "USD",
+     "balance": "-410.25", "balance-date": 1773532800,
+     "transactions": [
+       {"id": "T9", "posted": 1773360000, "amount": "-64.50", "description": "WHOLE FOODS MARKET"}
+     ]},
+    {"id": "A3", "conn_id": "CON1", "name": "Auto Loan", "currency": "USD",
+     "balance": "8200.00", "balance-date": 1773532800, "transactions": []},
+    {"id": "A4", "conn_id": "CON1", "name": "Roth IRA", "currency": "USD",
+     "balance": "15000.10", "balance-date": 1773532800, "transactions": []}
+  ]
+}

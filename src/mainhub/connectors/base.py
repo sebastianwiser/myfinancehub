@@ -15,6 +15,7 @@ class SyncData:
     removed_transaction_ids: tuple[TransactionId, ...] = ()
     # New incremental-sync cursors by source key; persist only after the data is stored.
     cursors: Mapping[str, str] = field(default_factory=dict)
+    warnings: tuple[str, ...] = ()
 
 
 class Connector(Protocol):

@@ -1,0 +1,8 @@
+# Copy to categories.toml (gitignored). First match wins; yours run before the built-ins.
+[[rule]]
+match = "blue bottle"
+category = "Coffee"
+
+[[rule]]
+match = "venmo"
+category = "Transfer"

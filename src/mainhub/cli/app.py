@@ -14,6 +14,12 @@ from mainhub.connectors.base import Connector
 from mainhub.connectors.csv import CsvConnector
 from mainhub.connectors.mock import MockConnector
 from mainhub.connectors.plaid import HttpPlaidClient, PlaidConnector
+from mainhub.connectors.simplefin import (
+    SimpleFinClient,
+    SimpleFinConnector,
+    claim_access_url,
+)
+from mainhub.core.categorize import load_rules
 from mainhub.core.money import format_cents
 from mainhub.core.receipts import reconcile_all
 from mainhub.core.sqlite_store import SqliteStore
@@ -55,6 +61,36 @@ def _plaid_connector(store: SqliteStore) -> PlaidConnector:
     return PlaidConnector(client, tokens, store.get_cursor, _today())
 
 
+def _simplefin_connector(store: SqliteStore, days: int) -> SimpleFinConnector:
+    access_url = os.environ.get("SIMPLEFIN_ACCESS_URL")
+    if not access_url:
+        store.close()
+        typer.echo("error: run `mainhub simplefin-claim` first (SIMPLEFIN_ACCESS_URL)", err=True)
+        raise typer.Exit(1)
+    try:
+        client = SimpleFinClient(access_url)
+        rules_path = Path(os.environ.get("MAINHUB_CATEGORY_RULES", "categories.toml"))
+        rules = load_rules(rules_path)
+    except MainHubError as exc:
+        store.close()
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    return SimpleFinConnector(client, store.get_cursor, _today(), days, rules)
+
+
+@app.command("simplefin-claim")
+def simplefin_claim() -> None:
+    """Exchange a SimpleFIN setup token for an access URL and save it to .env (not printed)."""
+    token = typer.prompt("Paste your SimpleFIN setup token", hide_input=True)
+    try:
+        access_url = claim_access_url(token)
+    except MainHubError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    set_var(env_file(), "SIMPLEFIN_ACCESS_URL", access_url)
+    typer.echo(f"saved SIMPLEFIN_ACCESS_URL to {env_file()}")
+
+
 @app.callback()
 def main() -> None:
     """MainHub: personal finance platform."""
@@ -69,11 +105,12 @@ def version() -> None:
 
 @app.command()
 def sync(
-    source: Annotated[str, typer.Option(help="mock, csv or plaid")] = "mock",
+    source: Annotated[str, typer.Option(help="mock, csv, plaid or simplefin")] = "mock",
     transactions: Annotated[
         Path | None, typer.Option(help="Transactions CSV (csv source).")
     ] = None,
     balances: Annotated[Path | None, typer.Option(help="Balances CSV (csv source).")] = None,
+    days: Annotated[int, typer.Option(min=1, help="First-sync history (simplefin).")] = 90,
     db: DbOption = Path("data/mainhub.sqlite"),
 ) -> None:
     """Pull data from a source into the local store (idempotent)."""
@@ -87,8 +124,10 @@ def sync(
         connector = CsvConnector(transactions, balances)
     elif source == "plaid":
         connector = _plaid_connector(store)
+    elif source == "simplefin":
+        connector = _simplefin_connector(store, days)
     else:
-        raise typer.BadParameter("source must be 'mock', 'csv' or 'plaid'")
+        raise typer.BadParameter("source must be 'mock', 'csv', 'plaid' or 'simplefin'")
     try:
         data = connector.fetch()
         store.upsert_accounts(data.accounts)
@@ -108,6 +147,8 @@ def sync(
         f"synced {len(data.accounts)} accounts, {len(data.balances)} balances, "
         f"{len(data.transactions)} transactions"
     )
+    for warning in data.warnings:
+        typer.echo(f"warning: {warning}", err=True)
     if newly_matched:
         typer.echo(f"matched {newly_matched} receipt(s) to bank transactions")
 
