@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "amount_convention": "negative_is_outflow",
+  "generated_at": "2026-03-15T14:00:00Z",
+  "accounts": [
+    {"id": "acc1", "name": "Demo Checking", "type": "checking", "balance": "4823.15", "balance_as_of": "2026-03-15"},
+    {"id": "acc2", "name": "Demo Card", "type": "credit", "balance": "832.40", "balance_as_of": "2026-03-15"}
+  ],
+  "transactions": [
+    {"id": "tx1", "account_id": "acc1", "date": "2026-03-14", "amount": "-4.75", "description": "COFFEE SHOP", "category": "Dining"},
+    {"id": "tx2", "account_id": "acc2", "date": "2026-03-14", "amount": "-64.50", "description": "GROCERY", "category": "Groceries"}
+  ]
+}

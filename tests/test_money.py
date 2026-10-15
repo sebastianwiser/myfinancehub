@@ -21,7 +21,9 @@ def test_parse_cents(text: str, cents: int) -> None:
     assert parse_cents(text) == cents
 
 
-@pytest.mark.parametrize("text", ["", "abc", "NaN", "Infinity", "1.2.3"])
+@pytest.mark.parametrize(
+    "text", ["", "abc", "NaN", "Infinity", "1.2.3", "1,2,3", "12,34", "1,23.45", ",100"]
+)
 def test_parse_cents_rejects_garbage(text: str) -> None:
     with pytest.raises(MoneyParseError):
         parse_cents(text)

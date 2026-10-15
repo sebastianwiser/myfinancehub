@@ -1,5 +1,6 @@
 import os
 import secrets
+import time
 import webbrowser
 from datetime import UTC, date, datetime, timedelta
 from importlib.metadata import version as pkg_version
@@ -12,6 +13,7 @@ from mainhub.agents.vision import DEFAULT_HOST, DEFAULT_MODEL, OllamaVisionProvi
 from mainhub.channels.telegram import TelegramClient, run_bot
 from mainhub.connectors.base import Connector
 from mainhub.connectors.csv import CsvConnector
+from mainhub.connectors.json_import import apply_snapshot, import_dir, parse_snapshot, utc_now
 from mainhub.connectors.mock import MockConnector
 from mainhub.connectors.plaid import HttpPlaidClient, PlaidConnector
 from mainhub.connectors.simplefin import (
@@ -76,6 +78,60 @@ def _simplefin_connector(store: SqliteStore, days: int) -> SimpleFinConnector:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(1) from exc
     return SimpleFinConnector(client, store.get_cursor, _today(), days, rules)
+
+
+@app.command("import")
+def import_file(
+    path: Annotated[Path, typer.Argument(help="Snapshot JSON written by the automation.")],
+    db: DbOption = Path("data/mainhub.sqlite"),
+) -> None:
+    """Validate and import one snapshot file (see docs/codex-automation.md)."""
+    store = SqliteStore(db)
+    try:
+        result = parse_snapshot(path, utc_now())
+        warnings = apply_snapshot(store, result)
+        newly_matched = reconcile_all(store, _today())
+    except MainHubError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    finally:
+        store.close()
+    for warning in warnings:
+        typer.echo(f"warning: {warning}", err=True)
+    typer.echo(
+        f"imported {len(result.data.accounts)} accounts, "
+        f"{len(result.data.transactions)} transactions"
+    )
+    if newly_matched:
+        typer.echo(f"matched {newly_matched} receipt(s) to bank transactions")
+
+
+@app.command("import-dir")
+def import_directory(
+    folder: Annotated[Path, typer.Argument(help="Folder the automation writes snapshots to.")],
+    watch: Annotated[int, typer.Option(min=0, help="Re-check every N seconds (0 = once).")] = 0,
+    db: DbOption = Path("data/mainhub.sqlite"),
+) -> None:
+    """Import all new snapshots in a (synced) folder; each file is processed once."""
+    store = SqliteStore(db)
+    try:
+        while True:
+            try:
+                lines = import_dir(store, folder, utc_now())
+                if lines:
+                    reconcile_all(store, _today())
+            except MainHubError as exc:
+                typer.echo(f"error: {exc}", err=True)
+                raise typer.Exit(1) from exc
+            for line in lines:
+                typer.echo(line, err=line.startswith(("warning", "rejected")))
+            if not watch:
+                return
+            time.sleep(watch)
+    except KeyboardInterrupt:
+        typer.echo("stopped")
+    finally:
+        store.close()
 
 
 @app.command("simplefin-claim")
