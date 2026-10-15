@@ -14,6 +14,7 @@ from mainhub.core.money import format_cents
 from mainhub.core.sqlite_store import SqliteStore
 from mainhub.core.tools import get_spending, net_worth
 from mainhub.errors import MainHubError
+from mainhub.settings import append_to_list_var, env_file, load_env_file
 
 app = typer.Typer(help="MainHub: personal finance platform.", no_args_is_help=True)
 
@@ -51,6 +52,7 @@ def _plaid_connector(store: SqliteStore) -> PlaidConnector:
 @app.callback()
 def main() -> None:
     """MainHub: personal finance platform."""
+    load_env_file(env_file())
 
 
 @app.command()
@@ -99,6 +101,26 @@ def sync(
         f"synced {len(data.accounts)} accounts, {len(data.balances)} balances, "
         f"{len(data.transactions)} transactions"
     )
+
+
+@app.command("link-sandbox")
+def link_sandbox() -> None:
+    """Create a Plaid sandbox login and save its access token to .env (token is not printed)."""
+    client_id = os.environ.get("PLAID_CLIENT_ID")
+    secret = os.environ.get("PLAID_SECRET")
+    if not (client_id and secret):
+        typer.echo("error: set PLAID_CLIENT_ID and PLAID_SECRET in .env first", err=True)
+        raise typer.Exit(1)
+    if os.environ.get("PLAID_ENV", "sandbox") != "sandbox":
+        typer.echo("error: link-sandbox only works with PLAID_ENV=sandbox", err=True)
+        raise typer.Exit(1)
+    try:
+        token = HttpPlaidClient(client_id, secret, "sandbox").create_sandbox_access_token()
+    except MainHubError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+    append_to_list_var(env_file(), "PLAID_ACCESS_TOKENS", token)
+    typer.echo(f"saved a sandbox access token to {env_file()}")
 
 
 @app.command()

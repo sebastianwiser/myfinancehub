@@ -56,6 +56,17 @@ class HttpPlaidClient:
             body["cursor"] = cursor
         return self._post("/transactions/sync", body)
 
+    def create_sandbox_access_token(self, institution_id: str = "ins_109508") -> str:
+        """Mint a sandbox access token without the browser Link flow (sandbox only)."""
+        created = self._post(
+            "/sandbox/public_token/create",
+            {"institution_id": institution_id, "initial_products": ["transactions"]},
+        )
+        exchanged = self._post(
+            "/item/public_token/exchange", {"public_token": created["public_token"]}
+        )
+        return str(exchanged["access_token"])
+
     def _post(self, path: str, body: dict[str, Any]) -> Mapping[str, Any]:
         try:
             response = self._http.post(path, json={**self._auth, **body})
