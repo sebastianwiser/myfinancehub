@@ -8,13 +8,14 @@ Format: schema_version 1, amounts as USD decimal strings, negative = money out.
 import hashlib
 import json
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from mainhub.connectors.base import SyncData
+from mainhub.core.categorize import DEFAULT_RULES, Rule, categorize
 from mainhub.core.models import (
     Account,
     AccountId,
@@ -51,7 +52,9 @@ def _require(obj: Mapping[str, Any], key: str, where: str) -> Any:
     return obj[key]
 
 
-def parse_snapshot(path: Path, now: datetime) -> ImportResult:
+def parse_snapshot(
+    path: Path, now: datetime, rules: Sequence[Rule] = DEFAULT_RULES
+) -> ImportResult:
     """Validate a snapshot file and normalize it. Raises ConnectorError on any problem."""
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
@@ -71,7 +74,7 @@ def parse_snapshot(path: Path, now: datetime) -> ImportResult:
         if generated_at.tzinfo is None:
             raise ConnectorError(f"{path.name}: generated_at needs a timezone (e.g. 'Z')")
         accounts, balances = _parse_accounts(doc, path.name)
-        transactions = _parse_transactions(doc, path.name, accounts, now.date())
+        transactions = _parse_transactions(doc, path.name, accounts, now.date(), rules)
     except (ValueError, TypeError, MoneyParseError) as exc:
         raise ConnectorError(f"{path.name}: {exc}") from exc
 
@@ -112,7 +115,11 @@ def _parse_accounts(doc: Mapping[str, Any], name: str) -> tuple[dict[str, Accoun
 
 
 def _parse_transactions(
-    doc: Mapping[str, Any], name: str, accounts: Mapping[str, Account], today: date
+    doc: Mapping[str, Any],
+    name: str,
+    accounts: Mapping[str, Account],
+    today: date,
+    rules: Sequence[Rule],
 ) -> list[Transaction]:
     out: list[Transaction] = []
     seen_ids: set[str] = set()
@@ -140,14 +147,16 @@ def _parse_transactions(
             occurrences[key] += 1
             digest = hashlib.sha256(key.encode()).hexdigest()[:16]
             tx_id = TransactionId(f"import-k{digest}-{occurrences[key]}")
+        description = str(_require(raw, "description", "transaction"))[:200]
+        category = str(raw["category"])[:60] if raw.get("category") else None
         out.append(
             Transaction(
                 tx_id,
                 account.id,
                 posted,
                 cents,
-                str(_require(raw, "description", "transaction"))[:200],
-                (str(raw["category"])[:60] if raw.get("category") else None),
+                description,
+                category or categorize(description, rules),
             )
         )
     return out
@@ -184,7 +193,9 @@ def apply_snapshot(store: FinanceStore, result: ImportResult) -> list[str]:
     return warnings
 
 
-def import_dir(store: FinanceStore, directory: Path, now: datetime) -> list[str]:
+def import_dir(
+    store: FinanceStore, directory: Path, now: datetime, rules: Sequence[Rule] = DEFAULT_RULES
+) -> list[str]:
     """Import every new *.json snapshot in `directory`, oldest first. Returns report lines.
 
     Each file's content hash is remembered, so a file is processed once even if it stays in
@@ -200,7 +211,7 @@ def import_dir(store: FinanceStore, directory: Path, now: datetime) -> list[str]
         if store.get_cursor(key) is not None:
             continue
         try:
-            result = parse_snapshot(path, now)
+            result = parse_snapshot(path, now, rules)
         except ConnectorError as exc:
             store.set_cursor(key, "rejected")
             report.append(f"rejected: {exc}")

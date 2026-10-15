@@ -1,11 +1,8 @@
-import json
 from pathlib import Path
 
-import httpx
 import pytest
 
-from mainhub.connectors.plaid import HttpPlaidClient
-from mainhub.settings import append_to_list_var, load_env_file
+from mainhub.settings import load_env_file, set_var
 
 
 def test_load_env_file_skips_comments_and_empty_values(
@@ -26,26 +23,10 @@ def test_load_env_file_skips_comments_and_empty_values(
         monkeypatch.delenv(var, raising=False)
 
 
-def test_append_to_list_var_is_idempotent_and_private(tmp_path: Path) -> None:
+def test_set_var_replaces_and_is_private(tmp_path: Path) -> None:
     f = tmp_path / ".env"
-    f.write_text("OTHER=1\nTOKENS=a\n")
-    append_to_list_var(f, "TOKENS", "b")
-    append_to_list_var(f, "TOKENS", "b")
-    append_to_list_var(f, "NEW", "z")
-    assert f.read_text() == "OTHER=1\nTOKENS=a,b\nNEW=z\n"
+    f.write_text("A=1\nB=old\n")
+    set_var(f, "B", "new")
+    set_var(f, "C", "3")
+    assert f.read_text() == "A=1\nB=new\nC=3\n"
     assert f.stat().st_mode & 0o777 == 0o600
-
-
-def test_create_sandbox_access_token_exchanges_public_token() -> None:
-    paths: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        paths.append(request.url.path)
-        if request.url.path == "/sandbox/public_token/create":
-            return httpx.Response(200, json={"public_token": "public-x"})
-        assert json.loads(request.content)["public_token"] == "public-x"  # noqa: S105
-        return httpx.Response(200, json={"access_token": "access-y"})
-
-    client = HttpPlaidClient("c", "s", transport=httpx.MockTransport(handler))
-    assert client.create_sandbox_access_token() == "access-y"
-    assert paths == ["/sandbox/public_token/create", "/item/public_token/exchange"]

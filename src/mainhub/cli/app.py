@@ -1,7 +1,6 @@
 import os
 import secrets
 import time
-import webbrowser
 from datetime import UTC, date, datetime, timedelta
 from importlib.metadata import version as pkg_version
 from pathlib import Path
@@ -15,20 +14,13 @@ from mainhub.connectors.base import Connector
 from mainhub.connectors.csv import CsvConnector
 from mainhub.connectors.json_import import apply_snapshot, import_dir, parse_snapshot, utc_now
 from mainhub.connectors.mock import MockConnector
-from mainhub.connectors.plaid import HttpPlaidClient, PlaidConnector
-from mainhub.connectors.simplefin import (
-    SimpleFinClient,
-    SimpleFinConnector,
-    claim_access_url,
-)
 from mainhub.core.categorize import load_rules
 from mainhub.core.money import format_cents
 from mainhub.core.receipts import reconcile_all
 from mainhub.core.sqlite_store import SqliteStore
 from mainhub.core.tools import get_spending, net_worth
 from mainhub.errors import MainHubError
-from mainhub.link_server import LinkServer, serve_until_linked
-from mainhub.settings import append_to_list_var, env_file, load_env_file, set_var
+from mainhub.settings import env_file, load_env_file, set_var
 
 app = typer.Typer(help="MainHub: personal finance platform.", no_args_is_help=True)
 
@@ -38,46 +30,13 @@ DbOption = Annotated[
 ]
 
 
+def _rules() -> tuple[tuple[str, str], ...]:
+    """Personal categorization rules (categories.toml), then the built-in ones."""
+    return load_rules(Path(os.environ.get("MAINHUB_CATEGORY_RULES", "categories.toml")))
+
+
 def _today() -> date:
     return datetime.now(UTC).date()
-
-
-def _plaid_connector(store: SqliteStore) -> PlaidConnector:
-    """Build a Plaid connector from environment variables (never from CLI arguments)."""
-    client_id = os.environ.get("PLAID_CLIENT_ID")
-    secret = os.environ.get("PLAID_SECRET")
-    tokens = [t.strip() for t in os.environ.get("PLAID_ACCESS_TOKENS", "").split(",") if t.strip()]
-    if not (client_id and secret and tokens):
-        store.close()
-        typer.echo(
-            "error: set PLAID_CLIENT_ID, PLAID_SECRET and PLAID_ACCESS_TOKENS (see .env.example)",
-            err=True,
-        )
-        raise typer.Exit(1)
-    try:
-        client = HttpPlaidClient(client_id, secret, os.environ.get("PLAID_ENV", "sandbox"))
-    except MainHubError as exc:
-        store.close()
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1) from exc
-    return PlaidConnector(client, tokens, store.get_cursor, _today())
-
-
-def _simplefin_connector(store: SqliteStore, days: int) -> SimpleFinConnector:
-    access_url = os.environ.get("SIMPLEFIN_ACCESS_URL")
-    if not access_url:
-        store.close()
-        typer.echo("error: run `mainhub simplefin-claim` first (SIMPLEFIN_ACCESS_URL)", err=True)
-        raise typer.Exit(1)
-    try:
-        client = SimpleFinClient(access_url)
-        rules_path = Path(os.environ.get("MAINHUB_CATEGORY_RULES", "categories.toml"))
-        rules = load_rules(rules_path)
-    except MainHubError as exc:
-        store.close()
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1) from exc
-    return SimpleFinConnector(client, store.get_cursor, _today(), days, rules)
 
 
 @app.command("import")
@@ -88,7 +47,7 @@ def import_file(
     """Validate and import one snapshot file (see docs/codex-automation.md)."""
     store = SqliteStore(db)
     try:
-        result = parse_snapshot(path, utc_now())
+        result = parse_snapshot(path, utc_now(), _rules())
         warnings = apply_snapshot(store, result)
         newly_matched = reconcile_all(store, _today())
     except MainHubError as exc:
@@ -117,7 +76,7 @@ def import_directory(
     try:
         while True:
             try:
-                lines = import_dir(store, folder, utc_now())
+                lines = import_dir(store, folder, utc_now(), _rules())
                 if lines:
                     reconcile_all(store, _today())
             except MainHubError as exc:
@@ -134,19 +93,6 @@ def import_directory(
         store.close()
 
 
-@app.command("simplefin-claim")
-def simplefin_claim() -> None:
-    """Exchange a SimpleFIN setup token for an access URL and save it to .env (not printed)."""
-    token = typer.prompt("Paste your SimpleFIN setup token", hide_input=True)
-    try:
-        access_url = claim_access_url(token)
-    except MainHubError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1) from exc
-    set_var(env_file(), "SIMPLEFIN_ACCESS_URL", access_url)
-    typer.echo(f"saved SIMPLEFIN_ACCESS_URL to {env_file()}")
-
-
 @app.callback()
 def main() -> None:
     """MainHub: personal finance platform."""
@@ -161,12 +107,13 @@ def version() -> None:
 
 @app.command()
 def sync(
-    source: Annotated[str, typer.Option(help="mock, csv, plaid or simplefin")] = "mock",
+    source: Annotated[
+        str, typer.Option(help="mock or csv (bank data normally arrives via import-dir)")
+    ] = "mock",
     transactions: Annotated[
         Path | None, typer.Option(help="Transactions CSV (csv source).")
     ] = None,
     balances: Annotated[Path | None, typer.Option(help="Balances CSV (csv source).")] = None,
-    days: Annotated[int, typer.Option(min=1, help="First-sync history (simplefin).")] = 90,
     db: DbOption = Path("data/mainhub.sqlite"),
 ) -> None:
     """Pull data from a source into the local store (idempotent)."""
@@ -178,12 +125,8 @@ def sync(
         if transactions is None:
             raise typer.BadParameter("--transactions is required for the csv source")
         connector = CsvConnector(transactions, balances)
-    elif source == "plaid":
-        connector = _plaid_connector(store)
-    elif source == "simplefin":
-        connector = _simplefin_connector(store, days)
     else:
-        raise typer.BadParameter("source must be 'mock', 'csv', 'plaid' or 'simplefin'")
+        raise typer.BadParameter("source must be 'mock' or 'csv'")
     try:
         data = connector.fetch()
         store.upsert_accounts(data.accounts)
@@ -207,57 +150,6 @@ def sync(
         typer.echo(f"warning: {warning}", err=True)
     if newly_matched:
         typer.echo(f"matched {newly_matched} receipt(s) to bank transactions")
-
-
-@app.command()
-def link() -> None:
-    """Connect a real bank: opens Plaid Link in your browser and saves the access token to .env."""
-    client_id = os.environ.get("PLAID_CLIENT_ID")
-    secret = os.environ.get("PLAID_SECRET")
-    if not (client_id and secret):
-        typer.echo("error: set PLAID_CLIENT_ID and PLAID_SECRET in .env first", err=True)
-        raise typer.Exit(1)
-    try:
-        client = HttpPlaidClient(client_id, secret, os.environ.get("PLAID_ENV", "sandbox"))
-    except MainHubError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1) from exc
-    server = LinkServer(
-        client, lambda token: append_to_list_var(env_file(), "PLAID_ACCESS_TOKENS", token)
-    )
-    typer.echo(f"Opening {server.url}  (Ctrl+C to cancel)")
-    webbrowser.open(server.url)
-    try:
-        serve_until_linked(server)
-    except KeyboardInterrupt:
-        typer.echo("cancelled")
-        raise typer.Exit(1) from None
-    finally:
-        server.server_close()
-    if server.error:
-        typer.echo(f"error: {server.error}", err=True)
-        raise typer.Exit(1)
-    typer.echo(f"connected; saved the access token to {env_file()}")
-
-
-@app.command("link-sandbox")
-def link_sandbox() -> None:
-    """Create a Plaid sandbox login and save its access token to .env (token is not printed)."""
-    client_id = os.environ.get("PLAID_CLIENT_ID")
-    secret = os.environ.get("PLAID_SECRET")
-    if not (client_id and secret):
-        typer.echo("error: set PLAID_CLIENT_ID and PLAID_SECRET in .env first", err=True)
-        raise typer.Exit(1)
-    if os.environ.get("PLAID_ENV", "sandbox") != "sandbox":
-        typer.echo("error: link-sandbox only works with PLAID_ENV=sandbox", err=True)
-        raise typer.Exit(1)
-    try:
-        token = HttpPlaidClient(client_id, secret, "sandbox").create_sandbox_access_token()
-    except MainHubError as exc:
-        typer.echo(f"error: {exc}", err=True)
-        raise typer.Exit(1) from exc
-    append_to_list_var(env_file(), "PLAID_ACCESS_TOKENS", token)
-    typer.echo(f"saved a sandbox access token to {env_file()}")
 
 
 @app.command()

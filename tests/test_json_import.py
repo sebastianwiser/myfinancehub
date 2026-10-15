@@ -190,3 +190,13 @@ def test_cli_import_and_import_dir(tmp_path: Path) -> None:
     out = runner.invoke(app, ["import-dir", str(inbox), "--db", db])
     assert out.exit_code == 0
     assert "imported x.json" in out.output
+
+
+def test_missing_category_falls_back_to_rules(tmp_path: Path) -> None:
+    doc = _doc()
+    del doc["transactions"][0]["category"]
+    doc["transactions"][0]["description"] = "WHOLE FOODS MARKET"
+    result = parse_snapshot(_write(tmp_path, doc), NOW)
+    cats = {t.id: t.category for t in result.data.transactions}
+    assert cats[TransactionId("import-tx1")] == "Groceries"
+    assert cats[TransactionId("import-tx2")] == "Groceries"  # given category kept

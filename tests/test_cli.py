@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import pytest
 from typer.testing import CliRunner
 
 from mainhub.cli.app import app
@@ -45,11 +44,3 @@ def test_csv_sync_reports_bad_file(tmp_path: Path) -> None:
         ],
     )
     assert result.exit_code == 1
-
-
-def test_plaid_sync_requires_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    for var in ("PLAID_CLIENT_ID", "PLAID_SECRET", "PLAID_ACCESS_TOKENS"):
-        monkeypatch.delenv(var, raising=False)
-    result = runner.invoke(app, ["sync", "--source", "plaid", "--db", str(tmp_path / "d")])
-    assert result.exit_code == 1
-    assert "PLAID_CLIENT_ID" in result.output

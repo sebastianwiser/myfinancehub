@@ -30,6 +30,8 @@ rejected whole if anything is wrong, and flagged if it looks implausible.
   amount owed as negative regardless of sign.
 - `amount`: USD decimal string, **negative = money out (spent), positive = money in**. The
   `amount_convention` field must be present as shown; it guards against a flipped sign.
+- `category` is optional; when missing, MainHub applies its rules (`categories.toml`, see
+  `demo/categories.example.toml`).
 - `id` on transactions: copy the Plaid `transaction_id` whenever available. Without it, MainHub
   merges on account + date + amount, which also works but cannot tell apart a changed amount.
 - Skip nothing: include the last 14 days of transactions every run (overlap is safe), and every
